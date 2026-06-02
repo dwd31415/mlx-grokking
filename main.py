@@ -1,4 +1,5 @@
 import argparse
+import random
 import numpy as np
 import mlx.nn as nn
 import mlx.core as mx
@@ -36,7 +37,7 @@ parser.add_argument('-b', '--batch_size', type=int,
 parser.add_argument('-e', '--epochs', type=int,
                     default=150, help='number of epochs')
 # misc args
-parser.add_argument('--seed', type=int, default=42, help='random seed')
+parser.add_argument('--seed', type=int, default=random.randint(0,1000), help='random seed')
 parser.add_argument('--cpu', action='store_true', help='use cpu only')
 
 
@@ -56,6 +57,8 @@ class NeuralNetwork:
         self.train_acc_trace = []
         self.val_error_trace = []
         self.val_acc_trace = []
+        self.memorization_epoch = None
+        self.generalization_epochs = []
 
     def _make_batches(self, X, T):
         bs = self.batch_size if self.batch_size != -1 else X.shape[0]
@@ -79,7 +82,7 @@ class NeuralNetwork:
             return loss, correct
 
         epoch_bar = tqdm(range(epochs), desc='Training', unit='epoch')
-        for _ in epoch_bar:
+        for epoch in epoch_bar:
             self.model.train()
             if shuffle:
                 inds = mx.array(np.random.permutation(train_data[0].shape[0]))
@@ -97,7 +100,7 @@ class NeuralNetwork:
 
             self.train_error_trace.append(avg_train_loss)
             self.train_acc_trace.append(avg_train_acc)
-
+ 
             postfix = {'train_loss': f'{avg_train_loss:.3f}',
                        'train_acc': f'{avg_train_acc:.3f}'}
 
@@ -107,6 +110,12 @@ class NeuralNetwork:
             self.val_acc_trace.append(avg_val_acc)
             postfix.update({'val_loss': f'{avg_val_loss:.3f}',
                             'val_acc': f'{avg_val_acc:.3f}'})
+            if avg_train_acc > 0.95 and avg_val_acc < 0.2 and self.train_acc_trace[-2] < 0.95:
+                print(f"Memorization happened at epoch {epoch}!")
+                self.memorization_epoch = epoch
+            if avg_train_acc > 0.95 and avg_val_acc > 0.95 and self.val_acc_trace[-2] < 0.95:
+                print(f"Generalization happened at epoch {epoch}!")
+                self.generalization_epochs.append(epoch)
 
             epoch_bar.set_postfix(postfix)
 
@@ -161,6 +170,9 @@ def main(args):
             label='train', color='#1b9e77', lw=lw)
     ax.plot(np.array(net.val_acc_trace) * 100, 
             label='val', color='#d95f02', lw=lw)
+    plt.axvline(x=net.memorization_epoch, color='red', linestyle='--', linewidth=1.5, label='memorization')
+    for gen_epoch in net.generalization_epochs:
+        plt.axvline(x=gen_epoch, color='green', linestyle='--', linewidth=1.5, label='generalization')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Accuracy (%)')
     ax.legend()

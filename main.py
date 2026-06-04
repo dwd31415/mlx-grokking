@@ -14,14 +14,14 @@ from data import grokking_data
 
 parser = argparse.ArgumentParser(add_help=True)
 # data args
-parser.add_argument('--p', type=int, default=71, help='prime number')
+parser.add_argument('--p', type=int, default=61, help='prime number')
 parser.add_argument('--op', type=str, default='/',
                     help='operation', choices=['*', '/', '+', '-'])
 parser.add_argument('--train-fraction', type=float,
                     default=0.5, help='train fraction')
 # model args
 parser.add_argument('--depth', type=int, default=2, help='depth')
-parser.add_argument('--dim', type=int, default=128, help='dimension')
+parser.add_argument('--dim', type=int, default=100, help='dimension')
 parser.add_argument('--heads', type=int, default=1, help='heads')
 parser.add_argument('--dropout', type=float, default=0.2, help='dropout')
 # optimizer args
@@ -35,7 +35,7 @@ parser.add_argument('--warmup', type=int, default=10, help='warmup steps')
 parser.add_argument('-b', '--batch_size', type=int,
                     default=512, help='batch size')
 parser.add_argument('-e', '--epochs', type=int,
-                    default=300, help='number of epochs')
+                    default=600, help='number of epochs')
 # misc args
 parser.add_argument('--seed', type=int, default=random.randint(0,1000), help='random seed')
 parser.add_argument('--cpu', action='store_true', help='use cpu only')

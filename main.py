@@ -11,6 +11,7 @@ from functools import partial
 
 from models import Transformer
 from data import grokking_data
+from mlx.utils import tree_flatten, tree_unflatten
 
 parser = argparse.ArgumentParser(add_help=True)
 # data args
@@ -58,7 +59,10 @@ class NeuralNetwork:
         self.val_error_trace = []
         self.val_acc_trace = []
         self.memorization_epoch = None
+        self.memorization_hessian_eigenvalues = None
+        self.memorization_hessian_negative_eigenvalues = None
         self.generalization_epochs = []
+        self.generalization_hessian_negative_eigenvalues = []
 
     def _make_batches(self, X, T):
         bs = self.batch_size if self.batch_size != -1 else X.shape[0]
@@ -70,6 +74,76 @@ class NeuralNetwork:
         loss = self.loss_fn(Y, T, reduction='mean')
         correct = mx.sum(mx.argmax(Y, axis=1) == T)
         return loss, correct
+
+    def _flatten_parameters(self):
+        flat_params = tree_flatten(self.model.parameters())
+        spec = [(path, leaf.shape, leaf.size) for path, leaf in flat_params]
+        theta = mx.concatenate([mx.reshape(leaf, (-1,)) for _, leaf in flat_params])
+        return theta, spec
+
+    @staticmethod
+    def _unflatten_parameters(theta, spec):
+        params = {}
+        offset = 0
+        for path, shape, size in spec:
+            params[path] = theta[offset:offset + size].reshape(shape)
+            offset += size
+        return tree_unflatten(params)
+
+    def _top_hessian_eigenvalues(self, X, T, top_k=100):
+        theta0, spec = self._flatten_parameters()
+
+        def loss_from_theta(theta):
+            self.model.update(self._unflatten_parameters(theta, spec))
+            Y = self.model(X)
+            return self.loss_fn(Y, T, reduction='mean')
+
+        grad_fn = mx.grad(loss_from_theta)
+
+        def hvp(vec):
+            return mx.grad(lambda th: mx.sum(grad_fn(th) * vec))(theta0)
+
+        n = theta0.size
+        k = min(top_k, n)
+        q_prev = mx.zeros_like(theta0)
+        q = mx.random.normal(shape=theta0.shape)
+        q_norm = mx.sqrt(mx.sum(q * q))
+        if float(q_norm) == 0.0:
+            q = mx.ones_like(theta0) / mx.sqrt(float(n))
+        else:
+            q = q / q_norm
+
+        alphas = []
+        betas = []
+
+        for i in range(k):
+            z = hvp(q)
+            if i > 0:
+                z = z - betas[-1] * q_prev
+
+            alpha = float(mx.sum(q * z))
+            z = z - alpha * q
+
+            beta = float(mx.sqrt(mx.sum(z * z)))
+            alphas.append(alpha)
+            if i < k - 1:
+                betas.append(beta)
+
+            if beta == 0.0:
+                break
+
+            q_prev, q = q, z / beta
+
+        m = len(alphas)
+        tridiag = np.zeros((m, m), dtype=np.float64)
+        np.fill_diagonal(tridiag, alphas)
+        if m > 1:
+            idx = np.arange(m - 1)
+            tridiag[idx, idx + 1] = betas[:m - 1]
+            tridiag[idx + 1, idx] = betas[:m - 1]
+
+        eigvals = np.linalg.eigvalsh(tridiag)[::-1]
+        return eigvals[:min(top_k, eigvals.shape[0])]
 
     def train(self, train_data, val_data, epochs=5, shuffle=True):
         state = [self.model.state, self.optimizer.state, mx.random.state]
@@ -110,12 +184,43 @@ class NeuralNetwork:
             self.val_acc_trace.append(avg_val_acc)
             postfix.update({'val_loss': f'{avg_val_loss:.3f}',
                             'val_acc': f'{avg_val_acc:.3f}'})
-            if avg_train_acc > 0.95 and avg_val_acc < 0.2 and self.train_acc_trace[-2] < 0.95:
+            prev_train_acc = self.train_acc_trace[-2] if len(self.train_acc_trace) > 1 else 0.0
+            prev_val_acc = self.val_acc_trace[-2] if len(self.val_acc_trace) > 1 else 0.0
+            if avg_train_acc > 0.95 and avg_val_acc < 0.2 and prev_train_acc < 0.95:
                 print(f"Memorization happened at epoch {epoch}!")
                 self.memorization_epoch = epoch
-            if avg_train_acc > 0.95 and avg_val_acc > 0.95 and self.val_acc_trace[-2] < 0.95:
+                if self.memorization_hessian_eigenvalues is None:
+                    probe_size = min(256, train_data[0].shape[0])
+                    probe_data = (train_data[0][:probe_size], train_data[1][:probe_size])
+                    self.model.eval()
+                    try:
+                        self.memorization_hessian_eigenvalues = self._top_hessian_eigenvalues(
+                            *probe_data, top_k=100
+                        )
+                    finally:
+                        self.model.train()
+                    top = self.memorization_hessian_eigenvalues
+                    self.memorization_hessian_negative_eigenvalues = int(np.sum(top < 0))
+                    print(
+                        f"Negative Hessian eigenvalues among top {len(top)} at memorization: "
+                        f"{self.memorization_hessian_negative_eigenvalues}"
+                    )
+            if avg_train_acc > 0.95 and avg_val_acc > 0.95 and prev_val_acc < 0.95:
                 print(f"Generalization happened at epoch {epoch}!")
                 self.generalization_epochs.append(epoch)
+                probe_size = min(256, train_data[0].shape[0])
+                probe_data = (train_data[0][:probe_size], train_data[1][:probe_size])
+                self.model.eval()
+                try:
+                    hessian_eigenvalues = self._top_hessian_eigenvalues(*probe_data, top_k=100)
+                finally:
+                    self.model.train()
+                negative_count = int(np.sum(hessian_eigenvalues < 0))
+                self.generalization_hessian_negative_eigenvalues.append(negative_count)
+                print(
+                    f"Negative Hessian eigenvalues among top {len(hessian_eigenvalues)} at generalization: "
+                    f"{negative_count}"
+                )
 
             epoch_bar.set_postfix(postfix)
 

@@ -15,14 +15,14 @@ from mlx.utils import tree_flatten, tree_unflatten
 
 parser = argparse.ArgumentParser(add_help=True)
 # data args
-parser.add_argument('--p', type=int, default=61, help='prime number')
+parser.add_argument('--p', type=int, default=97, help='prime number')
 parser.add_argument('--op', type=str, default='/',
                     help='operation', choices=['*', '/', '+', '-'])
 parser.add_argument('--train-fraction', type=float,
                     default=0.5, help='train fraction')
 # model args
 parser.add_argument('--depth', type=int, default=2, help='depth')
-parser.add_argument('--dim', type=int, default=100, help='dimension')
+parser.add_argument('--dim', type=int, default=128, help='dimension')
 parser.add_argument('--heads', type=int, default=1, help='heads')
 parser.add_argument('--dropout', type=float, default=0.2, help='dropout')
 # optimizer args
@@ -36,7 +36,7 @@ parser.add_argument('--warmup', type=int, default=10, help='warmup steps')
 parser.add_argument('-b', '--batch_size', type=int,
                     default=512, help='batch size')
 parser.add_argument('-e', '--epochs', type=int,
-                    default=600, help='number of epochs')
+                    default=150, help='number of epochs')
 # misc args
 parser.add_argument('--seed', type=int, default=random.randint(0,1000), help='random seed')
 parser.add_argument('--cpu', action='store_true', help='use cpu only')
@@ -186,7 +186,7 @@ class NeuralNetwork:
                             'val_acc': f'{avg_val_acc:.3f}'})
             prev_train_acc = self.train_acc_trace[-2] if len(self.train_acc_trace) > 1 else 0.0
             prev_val_acc = self.val_acc_trace[-2] if len(self.val_acc_trace) > 1 else 0.0
-            if avg_train_acc > 0.95 and avg_val_acc < 0.2 and prev_train_acc < 0.95:
+            if avg_train_acc > 0.99 and avg_val_acc < 0.2 and prev_train_acc < 0.99:
                 print(f"Memorization happened at epoch {epoch}!")
                 self.memorization_epoch = epoch
                 if self.memorization_hessian_eigenvalues is None:
@@ -195,27 +195,29 @@ class NeuralNetwork:
                     self.model.eval()
                     try:
                         self.memorization_hessian_eigenvalues = self._top_hessian_eigenvalues(
-                            *probe_data, top_k=100
+                            *probe_data, top_k=200
                         )
                     finally:
                         self.model.train()
                     top = self.memorization_hessian_eigenvalues
+                    print(np.sum(top * (top < 0)))
                     self.memorization_hessian_negative_eigenvalues = int(np.sum(top < 0))
                     print(
                         f"Negative Hessian eigenvalues among top {len(top)} at memorization: "
                         f"{self.memorization_hessian_negative_eigenvalues}"
                     )
-            if avg_train_acc > 0.95 and avg_val_acc > 0.95 and prev_val_acc < 0.95:
+            if avg_train_acc > 0.99 and avg_val_acc > 0.99 and prev_val_acc < 0.99:
                 print(f"Generalization happened at epoch {epoch}!")
                 self.generalization_epochs.append(epoch)
                 probe_size = min(256, train_data[0].shape[0])
                 probe_data = (train_data[0][:probe_size], train_data[1][:probe_size])
                 self.model.eval()
                 try:
-                    hessian_eigenvalues = self._top_hessian_eigenvalues(*probe_data, top_k=100)
+                    hessian_eigenvalues = self._top_hessian_eigenvalues(*probe_data, top_k=200)
                 finally:
                     self.model.train()
                 negative_count = int(np.sum(hessian_eigenvalues < 0))
+                print(np.sum(hessian_eigenvalues * (hessian_eigenvalues < 0)))
                 self.generalization_hessian_negative_eigenvalues.append(negative_count)
                 print(
                     f"Negative Hessian eigenvalues among top {len(hessian_eigenvalues)} at generalization: "

@@ -20,6 +20,7 @@ Run with default params for $a / b \mod p$ and save the result in [`media/grokki
 ```bash
 python main.py
 ```
+- When memorization is first detected, the script also estimates the top 100 Hessian eigenvalues of the loss on a probe batch.
 - **`main.py`**: training and evaluation loops
 - **`models.py`**: defines the Transformer model
 - **`data.py`**: generate the dataset

@@ -195,9 +195,7 @@ class NeuralNetwork:
             postfix.update({'val_loss': f'{avg_val_loss:.3f}',
                             'val_acc': f'{avg_val_acc:.3f}'})
 
-            prev_train_acc = self.train_acc_trace[-2] if len(self.train_acc_trace) > 1 else 0.0
-            prev_val_acc = self.val_acc_trace[-2] if len(self.val_acc_trace) > 1 else 0.0
-            if padded_access(self.train_acc_trace, -5) > 0.95 and padded_access(self.val_acc_trace, -5) < 0.2 and padded_access(self.train_acc_trace, -6) < 0.95:
+            if avg_train_acc > 0.97 and avg_val_acc < 0.5 and padded_access(self.train_error_trace, -2) - padded_access(self.train_error_trace, -1) < 0.005 and self.memorization_epoch is None:
                 print(f"Memorization happened at epoch {epoch}!")
                 self.memorization_epoch = epoch
                 if self.memorization_hessian_eigenvalues is None:
@@ -217,7 +215,7 @@ class NeuralNetwork:
                         f"Negative Hessian eigenvalues among top {len(top)} at memorization: "
                         f"{self.memorization_hessian_negative_eigenvalues}"
                     )
-            if padded_access(self.train_acc_trace, -5) > 0.99 and padded_access(self.val_acc_trace, -5) > 0.99 and padded_access(self.val_acc_trace, -6) < 0.99:
+            if avg_train_acc > 0.97 and avg_val_acc > 0.97 and padded_access(self.train_error_trace, -2) - padded_access(self.train_error_trace, -1) < 0.005 and len(self.generalization_epochs) == 0:
                 print(f"Generalization happened at epoch {epoch}!")
                 self.generalization_epochs.append(epoch)
                 probe_size = min(256, train_data[0].shape[0])

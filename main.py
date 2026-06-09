@@ -42,6 +42,16 @@ parser.add_argument('--seed', type=int, default=random.randint(0,1000), help='ra
 parser.add_argument('--cpu', action='store_true', help='use cpu only')
 
 
+def padded_access(x, idx):
+    if idx < 0:
+        if len(x) + idx < 0:
+            return 0
+        return x[len(x) + idx]
+    elif idx >= len(x):
+        return 0
+    else:
+        return x[idx]
+
 class NeuralNetwork:
     def __init__(self,
                  model: nn.Module,
@@ -184,9 +194,10 @@ class NeuralNetwork:
             self.val_acc_trace.append(avg_val_acc)
             postfix.update({'val_loss': f'{avg_val_loss:.3f}',
                             'val_acc': f'{avg_val_acc:.3f}'})
+
             prev_train_acc = self.train_acc_trace[-2] if len(self.train_acc_trace) > 1 else 0.0
             prev_val_acc = self.val_acc_trace[-2] if len(self.val_acc_trace) > 1 else 0.0
-            if avg_train_acc > 0.99 and avg_val_acc < 0.2 and prev_train_acc < 0.99:
+            if padded_access(self.train_acc_trace, -5) > 0.95 and padded_access(self.val_acc_trace, -5) < 0.2 and padded_access(self.train_acc_trace, -6) < 0.95:
                 print(f"Memorization happened at epoch {epoch}!")
                 self.memorization_epoch = epoch
                 if self.memorization_hessian_eigenvalues is None:
@@ -206,7 +217,7 @@ class NeuralNetwork:
                         f"Negative Hessian eigenvalues among top {len(top)} at memorization: "
                         f"{self.memorization_hessian_negative_eigenvalues}"
                     )
-            if avg_train_acc > 0.99 and avg_val_acc > 0.99 and prev_val_acc < 0.99:
+            if padded_access(self.train_acc_trace, -5) > 0.99 and padded_access(self.val_acc_trace, -5) > 0.99 and padded_access(self.val_acc_trace, -6) < 0.99:
                 print(f"Generalization happened at epoch {epoch}!")
                 self.generalization_epochs.append(epoch)
                 probe_size = min(256, train_data[0].shape[0])
@@ -285,6 +296,21 @@ def main(args):
     ax.legend()
     fig.tight_layout()
     fig.savefig('media/grokking.png', dpi=300)
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+    ax.plot(np.array(net.train_error_trace),
+            label='train', color='#1b9e77', lw=lw)
+    ax.plot(np.array(net.val_error_trace),
+            label='val', color='#d95f02', lw=lw)
+    plt.axvline(x=net.memorization_epoch, color='red', linestyle='--', linewidth=1.5, label='memorization')
+    for gen_epoch in net.generalization_epochs:
+        plt.axvline(x=gen_epoch, color='green', linestyle='--', linewidth=1.5, label='generalization')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig('media/grokking_loss.png', dpi=300)
     plt.show()
 
 

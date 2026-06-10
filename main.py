@@ -19,7 +19,7 @@ parser.add_argument('--p', type=int, default=97, help='prime number')
 parser.add_argument('--op', type=str, default='/',
                     help='operation', choices=['*', '/', '+', '-'])
 parser.add_argument('--train-fraction', type=float,
-                    default=0.5, help='train fraction')
+                    default=0.45, help='train fraction')
 # model args
 parser.add_argument('--depth', type=int, default=2, help='depth')
 parser.add_argument('--dim', type=int, default=128, help='dimension')
@@ -36,7 +36,7 @@ parser.add_argument('--warmup', type=int, default=10, help='warmup steps')
 parser.add_argument('-b', '--batch_size', type=int,
                     default=512, help='batch size')
 parser.add_argument('-e', '--epochs', type=int,
-                    default=150, help='number of epochs')
+                    default=200, help='number of epochs')
 # misc args
 parser.add_argument('--seed', type=int, default=random.randint(0,1000), help='random seed')
 parser.add_argument('--cpu', action='store_true', help='use cpu only')
@@ -195,7 +195,7 @@ class NeuralNetwork:
             postfix.update({'val_loss': f'{avg_val_loss:.3f}',
                             'val_acc': f'{avg_val_acc:.3f}'})
 
-            if avg_train_acc > 0.97 and avg_val_acc < 0.5 and padded_access(self.train_error_trace, -2) - padded_access(self.train_error_trace, -1) < 0.005 and self.memorization_epoch is None:
+            if avg_train_acc > 0.97 and avg_val_acc < 0.7 and padded_access(self.train_error_trace, -2) - padded_access(self.train_error_trace, -1) < 0.005 and self.memorization_epoch is None:
                 print(f"Memorization happened at epoch {epoch}!")
                 self.memorization_epoch = epoch
                 if self.memorization_hessian_eigenvalues is None:
@@ -209,12 +209,12 @@ class NeuralNetwork:
                     finally:
                         self.model.train()
                     top = self.memorization_hessian_eigenvalues
-                    print(np.sum(top * (top < 0)))
                     self.memorization_hessian_negative_eigenvalues = int(np.sum(top < 0))
                     print(
                         f"Negative Hessian eigenvalues among top {len(top)} at memorization: "
                         f"{self.memorization_hessian_negative_eigenvalues}"
                     )
+                    print("These are: " + f"{np.sort(top)[0:self.memorization_hessian_negative_eigenvalues]}")
             if avg_train_acc > 0.97 and avg_val_acc > 0.97 and padded_access(self.train_error_trace, -2) - padded_access(self.train_error_trace, -1) < 0.005 and len(self.generalization_epochs) == 0:
                 print(f"Generalization happened at epoch {epoch}!")
                 self.generalization_epochs.append(epoch)
@@ -226,12 +226,12 @@ class NeuralNetwork:
                 finally:
                     self.model.train()
                 negative_count = int(np.sum(hessian_eigenvalues < 0))
-                print(np.sum(hessian_eigenvalues * (hessian_eigenvalues < 0)))
                 self.generalization_hessian_negative_eigenvalues.append(negative_count)
                 print(
                     f"Negative Hessian eigenvalues among top {len(hessian_eigenvalues)} at generalization: "
                     f"{negative_count}"
                 )
+                print("These are: " + f"{np.sort(hessian_eigenvalues)[0:negative_count]}")
 
             epoch_bar.set_postfix(postfix)
 
